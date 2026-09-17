@@ -946,6 +946,12 @@ function QuickRSSUI:_populateItems()
     self.prev_button:enableDisable(self.show_page > 1)
     self.next_button:enableDisable(self.show_page < self.pages)
 
+    -- Footer row: filter button + prev/next page buttons, reachable by
+    -- pressing Down past the last card (Button already supports the
+    -- FocusManager highlight natively, no extra wiring needed). Prev/next
+    -- also stay reachable via the physical page-turn keys as before.
+    table.insert(self.layout, { self.filter_button, self.prev_button, self.next_button })
+
     self.outer_group:resetLayout()
 
     -- Reset the d-pad focus cursor to the first card on the new page/filter
