@@ -11,9 +11,9 @@ local CenterContainer = require("ui/widget/container/centercontainer")
 local Config          = require("modules/data/config")
 local Icons           = require("modules/ui/icons")
 local Device          = require("device")
+local FocusManager    = require("ui/widget/focusmanager")
 local FrameContainer  = require("ui/widget/container/framecontainer")
 local Geom            = require("ui/geometry")
-local InputContainer  = require("ui/widget/container/inputcontainer")
 local InputDialog     = require("ui/widget/inputdialog")
 local Size            = require("ui/size")
 local SpinWidget      = require("ui/widget/spinwidget")
@@ -33,7 +33,7 @@ local ROW_H      = SR.ROW_H
 local VALUE_FACE = SR.VALUE_FACE
 
 -- ─────────────────────────────────────────────────────────────────────────────
-local SettingsUI = InputContainer:extend{
+local SettingsUI = FocusManager:extend{
     name     = "quickrss_settings",
     on_close = nil,   -- optional callback fired when the popup closes
 }
@@ -47,9 +47,11 @@ function SettingsUI:init()
     local screen_w = Screen:getWidth()
     local screen_h = Screen:getHeight()
 
-    self.key_events = {
-        Close = { { "Back" }, doc = "close settings" },
-    }
+    -- Assign into self.key_events rather than replacing it -- FocusManager's
+    -- _init() (called before this init()) already populated it with the
+    -- d-pad bindings (Up/Down move the row focus cursor, Press activates
+    -- the focused row).
+    self.key_events.Close = { { "Back" }, { "Home" }, doc = "close settings" }
 
     -- Current settings (merged with defaults)
     self.s = Config.getArticleSettings()
@@ -146,6 +148,12 @@ function SettingsUI:init()
         CenterContainer:new{ dimen = Geom:new{ w = popup_w, h = ROW_H }, row8 },
     }
 
+    -- FocusManager layout: one row per settings row, single column.
+    self.layout = {
+        { row1 }, { row2 }, { row3 }, { row4 },
+        { row5 }, { row6 }, { row7 }, { row8 },
+    }
+
     -- ── Popup frame ───────────────────────────────────────────────────────────
     local rows_content_h = ROW_H * 8
     local popup_h        = title_bar_h + rows_content_h + 2 * Size.border.window
@@ -169,6 +177,9 @@ function SettingsUI:init()
         dimen = Geom:new{ w = screen_w, h = screen_h },
         popup,
     }
+
+    -- Apply the initial d-pad focus highlight to row1.
+    self:refocusWidget()
 
     -- Mirror what feed_list.lua does: queue a deferred setDirty so UIManager
     -- repaints the full popup once self.dimen is populated after the first

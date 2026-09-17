@@ -223,6 +223,11 @@ function ArticleItem:init()
         margin    = 0,
         bordersize = 0,
         background = Blitbuffer.COLOR_WHITE,
+        -- Lets this card take the FocusManager highlight on non-touch
+        -- devices (d-pad Up/Down moves a cursor across cards; the border
+        -- is drawn/cleared automatically by FrameContainer's own
+        -- onFocus/onUnfocus). No-op on touch devices.
+        focusable  = true,
         row_content,
     }
 end

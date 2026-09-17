@@ -11,12 +11,12 @@ local Config          = require("modules/data/config")
 local Icons           = require("modules/ui/icons")
 local Device          = require("device")
 local Font            = require("ui/font")
+local FocusManager    = require("ui/widget/focusmanager")
 local FrameContainer  = require("ui/widget/container/framecontainer")
 local Geom            = require("ui/geometry")
 local GestureRange    = require("ui/gesturerange")
 local HorizontalGroup = require("ui/widget/horizontalgroup")
 local HorizontalSpan  = require("ui/widget/horizontalspan")
-local InputContainer  = require("ui/widget/container/inputcontainer")
 local LineWidget      = require("ui/widget/linewidget")
 local Cache           = require("modules/data/cache")
 local lfs             = require("libs/libkoreader-lfs")
@@ -101,7 +101,7 @@ local Screen = Device.screen
 --   list_spacer   ← absorbs leftover pixels so footer stays at screen bottom
 --   footer        (prev chevron | "Page N of M" | next chevron)
 -- ─────────────────────────────────────────────────────────────────────────────
-local QuickRSSUI = InputContainer:extend{
+local QuickRSSUI = FocusManager:extend{
     name           = "quickrss_ui",
     show_page      = 1,
     articles       = {},     -- all articles (unfiltered)
@@ -115,14 +115,20 @@ function QuickRSSUI:init()
     local screen_w = Screen:getWidth()
     local screen_h = Screen:getHeight()
 
-    -- Hardware buttons: Back closes, page-turn keys navigate pages.
-    -- Each key must be its own sequence entry — Key:match() requires ALL
-    -- keys in a single sequence to be pressed simultaneously.
-    self.key_events = {
-        Close    = { { "Back" }, doc = "close QuickRSS" },
-        NextPage = { { "RPgFwd" }, { "LPgFwd" }, doc = "next page" },
-        PrevPage = { { "RPgBack" }, { "LPgBack" }, doc = "prev page" },
-    }
+    -- Hardware buttons: Back/Home close, page-turn keys navigate pages,
+    -- Menu opens the hamburger menu. Each key must be its own sequence
+    -- entry — Key:match() requires ALL keys in a single sequence to be
+    -- pressed simultaneously.
+    --
+    -- FocusManager:_init() (called before this init()) already populated
+    -- self.key_events with the d-pad bindings (Up/Down/Left/Right move the
+    -- card focus cursor, Press "taps" the focused card, ScreenKB+Press
+    -- "holds" it) -- assign into it below rather than replacing it, or
+    -- those get clobbered.
+    self.key_events.Close    = { { "Back" }, { "Home" }, doc = "close QuickRSS" }
+    self.key_events.NextPage = { { "RPgFwd" }, { "LPgFwd" }, doc = "next page" }
+    self.key_events.PrevPage = { { "RPgBack" }, { "LPgBack" }, doc = "prev page" }
+    self.key_events.OpenMenu = { { "Menu" }, doc = "open hamburger menu" }
 
     -- Swipe left/right to flip pages
     self.ges_events.Swipe = {
@@ -455,6 +461,11 @@ end
 function QuickRSSUI:_showStatus(message)
     self.article_list:clear()
     self.article_list:resetLayout()
+
+    -- No cards on screen while a status message is showing -- clear the
+    -- d-pad focus layout so a stale cursor can't point at a removed card.
+    self.layout   = {}
+    self.selected = { x = 1, y = 1 }
 
     -- Use the full list area height so the placeholder is centred in the
     -- available space and the footer remains at the bottom of the screen.
@@ -843,6 +854,10 @@ function QuickRSSUI:_populateItems()
     local extra_px    = (page_count > 1) and (remaining - gap * gap_count) or remaining
     self.list_spacer.width = extra_px
 
+    -- FocusManager layout: one row per visible card, single column. Rebuilt
+    -- fresh on every page/filter change alongside the widgets themselves.
+    self.layout = {}
+
     local art_settings = require("modules/data/config").getArticleSettings()
     for i = start_idx, end_idx do
         local item = ArticleItem:new{
@@ -905,6 +920,7 @@ function QuickRSSUI:_populateItems()
             end,
         }
         table.insert(self.article_list, item)
+        table.insert(self.layout, { item })
 
         -- Dynamic-height separator between rows (omitted after the last item)
         if i < end_idx then
@@ -931,6 +947,14 @@ function QuickRSSUI:_populateItems()
     self.next_button:enableDisable(self.show_page < self.pages)
 
     self.outer_group:resetLayout()
+
+    -- Reset the d-pad focus cursor to the first card on the new page/filter
+    -- and re-apply its highlight (self.layout was just rebuilt, so any
+    -- previous focus position may no longer point at a valid item).
+    self.selected = { x = 1, y = 1 }
+    if #self.layout > 0 then
+        self:refocusWidget()
+    end
 
     -- Full e-ink flash every 3 page turns to clear ghosting; fast partial
     -- update ("ui") on the others for snappy navigation.
@@ -978,6 +1002,11 @@ end
 
 function QuickRSSUI:onPrevPage()
     self:prevPage()
+    return true
+end
+
+function QuickRSSUI:onOpenMenu()
+    self:_openMenu()
     return true
 end
 

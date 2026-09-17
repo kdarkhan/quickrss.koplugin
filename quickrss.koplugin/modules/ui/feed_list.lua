@@ -12,6 +12,7 @@ local CenterContainer     = require("ui/widget/container/centercontainer")
 local Config              = require("modules/data/config")
 local Icons               = require("modules/ui/icons")
 local Device              = require("device")
+local FocusManager        = require("ui/widget/focusmanager")
 local Font                = require("ui/font")
 local FrameContainer      = require("ui/widget/container/framecontainer")
 local Geom                = require("ui/geometry")
@@ -40,7 +41,7 @@ local NAME_FACE = Font:getFace("smallinfofontbold", 15)
 local URL_FACE  = Font:getFace("smallinfofont", 12)
 
 -- ─────────────────────────────────────────────────────────────────────────────
-local FeedListUI = InputContainer:extend{
+local FeedListUI = FocusManager:extend{
     name            = "quickrss_feed_list",
     reload_callback = nil,   -- set by QuickRSSUI
     _feeds_changed  = false,
@@ -50,9 +51,11 @@ function FeedListUI:init()
     local screen_w = Screen:getWidth()
     local screen_h = Screen:getHeight()
 
-    self.key_events = {
-        Close = { { "Back" }, doc = "close feed settings" },
-    }
+    -- Assign into self.key_events rather than replacing it -- FocusManager's
+    -- _init() (called before this init()) already populated it with the
+    -- d-pad bindings (Up/Down move the row focus cursor, Press activates
+    -- the focused row/button).
+    self.key_events.Close = { { "Back" }, { "Home" }, doc = "close feed settings" }
 
     -- ── Fixed popup dimensions ────────────────────────────────────────────────
     -- The popup is always the same size regardless of how many feeds exist.
@@ -78,18 +81,18 @@ function FeedListUI:init()
     local title_h = title_bar:getSize().h
 
     -- ── Footer (Add Feed button) ───────────────────────────────────────────────
-    local add_button = Button:new{
+    self.add_button = Button:new{
         text      = _("+ Add Feed"),
         callback  = function() self:_addFeedDialog() end,
         width     = popup_w - PAD * 4,
         bordersize = Size.border.button,
         padding   = PAD,
     }
-    local footer_h = add_button:getSize().h + PAD * 2
+    local footer_h = self.add_button:getSize().h + PAD * 2
 
     local footer = CenterContainer:new{
         dimen = Geom:new{ w = popup_w, h = footer_h },
-        add_button,
+        self.add_button,
     }
 
     -- ── Scrollable feed list ───────────────────────────────────────────────────
@@ -138,6 +141,10 @@ function FeedListUI:_populateFeeds()
     self.feed_list:clear()
     self.feed_list:resetLayout()
 
+    -- FocusManager layout: one row per feed's delete button, plus the Add
+    -- Feed button last. Rebuilt fresh alongside the widgets themselves.
+    self.layout = {}
+
     local feeds = Config.getFeeds()
 
     if #feeds == 0 then
@@ -160,6 +167,11 @@ function FeedListUI:_populateFeeds()
             end
         end
     end
+    table.insert(self.layout, { self.add_button })
+
+    -- Reset the d-pad focus cursor since self.layout was just rebuilt.
+    self.selected = { x = 1, y = 1 }
+    self:refocusWidget()
 
     UIManager:setDirty(self, function()
         return "ui", self.dimen
@@ -217,6 +229,7 @@ function FeedListUI:_makeFeedRow(feed, index)
         bordersize = 0,
         padding   = 0,
     }
+    table.insert(self.layout, { del_btn })
 
     return HorizontalGroup:new{
         align = "center",

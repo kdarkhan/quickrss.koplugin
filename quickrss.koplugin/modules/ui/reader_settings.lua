@@ -9,9 +9,9 @@ local CenterContainer = require("ui/widget/container/centercontainer")
 local Config          = require("modules/data/config")
 local Icons           = require("modules/ui/icons")
 local Device          = require("device")
+local FocusManager    = require("ui/widget/focusmanager")
 local FrameContainer  = require("ui/widget/container/framecontainer")
 local Geom            = require("ui/geometry")
-local InputContainer  = require("ui/widget/container/inputcontainer")
 local LineWidget      = require("ui/widget/linewidget")
 local Size            = require("ui/size")
 local SpinWidget      = require("ui/widget/spinwidget")
@@ -64,7 +64,7 @@ local function fontDisplayName(font_file)
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
-local ReaderSettingsUI = InputContainer:extend{
+local ReaderSettingsUI = FocusManager:extend{
     name      = "quickrss_reader_settings",
     on_change = nil,   -- function(prefs) – called when any setting changes
 }
@@ -75,9 +75,11 @@ function ReaderSettingsUI:init()
     local screen_w = Screen:getWidth()
     local screen_h = Screen:getHeight()
 
-    self.key_events = {
-        Close = { { "Back" }, doc = "close reader settings" },
-    }
+    -- Assign into self.key_events rather than replacing it -- FocusManager's
+    -- _init() (called before this init()) already populated it with the
+    -- d-pad bindings (Up/Down move the row focus cursor, Press activates
+    -- the focused row).
+    self.key_events.Close = { { "Back" }, { "Home" }, doc = "close reader settings" }
 
     self.s = Config.getReaderSettings()
 
@@ -195,6 +197,9 @@ function ReaderSettingsUI:init()
         CenterContainer:new{ dimen = Geom:new{ w = popup_w, h = ROW_H }, row_spacing },
     }
 
+    -- FocusManager layout: one row per settings row, single column.
+    self.layout = { { row_font }, { row_size }, { row_spacing } }
+
     -- ── Popup frame (height computed from content) ─────────────────────────────
     local rows_content_h = ROW_H * 3 + Size.line.thin * 2
     local popup_h        = title_bar_h + rows_content_h + 2 * Size.border.window
@@ -217,6 +222,9 @@ function ReaderSettingsUI:init()
         dimen = Geom:new{ w = screen_w, h = screen_h },
         popup,
     }
+
+    -- Apply the initial d-pad focus highlight to row_font.
+    self:refocusWidget()
 
     UIManager:setDirty(self, function()
         return "ui", self.dimen

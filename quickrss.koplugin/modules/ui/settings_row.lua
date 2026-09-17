@@ -36,6 +36,10 @@ local function makeRow(inner_w, label, val_widget, on_tap)
         margin     = 0,
         bordersize = 0,
         background = Blitbuffer.COLOR_WHITE,
+        -- Lets this row take the FocusManager highlight on non-touch
+        -- devices (d-pad Up/Down moves a cursor across rows, Press
+        -- activates on_tap). No-op on touch devices.
+        focusable  = true,
         HorizontalGroup:new{
             align = "center",
             TextBoxWidget:new{

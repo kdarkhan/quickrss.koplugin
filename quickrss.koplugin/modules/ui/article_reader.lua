@@ -146,8 +146,15 @@ function ArticleReader:init()
     local screen_w = Screen:getWidth()
     local screen_h = Screen:getHeight()
 
+    -- Left/Right mirror the swipe-west/east prev/next-article navigation
+    -- below; Menu mirrors tapping the title (opens the article's context
+    -- menu). Page-turn keys are deliberately left unbound here -- they
+    -- already reach ScrollHtmlWidget natively for scrolling the content.
     self.key_events = {
-        Close = { { "Back" }, doc = "close article reader" },
+        Close    = { { "Back" }, { "Home" }, doc = "close article reader" },
+        PrevArticle = { { "Left" },  doc = "previous article" },
+        NextArticle = { { "Right" }, doc = "next article" },
+        OpenMenu    = { { "Menu" },  doc = "open article menu" },
     }
 
     -- Swipe left/right to navigate between articles
@@ -421,6 +428,10 @@ function ArticleReader:onTapTitle()
     return true
 end
 
+function ArticleReader:onOpenMenu()
+    return self:onTapTitle()
+end
+
 function ArticleReader:_applyPrefs(prefs)
     self.prefs = prefs
     self.layout_group[self.scroll_idx] = ScrollHtmlWidget:new{
@@ -585,6 +596,16 @@ function ArticleReader:onSwipe(_, ges_ev)
         UIManager:setDirty(nil, "full", nil, true)
         return false
     end
+end
+
+function ArticleReader:onPrevArticle()
+    self:_navigateTo(self.article_index - 1)
+    return true
+end
+
+function ArticleReader:onNextArticle()
+    self:_navigateTo(self.article_index + 1)
+    return true
 end
 
 -- Close the current reader and open the article at new_idx in the list.
