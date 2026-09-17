@@ -44,7 +44,7 @@ function ArticleMenu.show(article, articles, on_change)
             {{ text = Icons.SAVE .. "  " .. (article.saved and _("Unsave Article") or _("Save Article")), callback = function()
                 UIManager:close(dialog)
                 article.saved = not article.saved
-                Cache.saveArticles(articles)
+                Cache.saveArticleStates(articles)
                 if on_change then on_change() end
             end }},
             {{ text = Icons.COPY .. "  " .. _("Copy Link"), callback = function()
@@ -69,7 +69,7 @@ function ArticleMenu.show(article, articles, on_change)
             {{ text = Icons.BOOK .. "  " .. (article.read and _("Mark as Unread") or _("Mark as Read")), callback = function()
                 UIManager:close(dialog)
                 article.read = not article.read
-                Cache.saveArticles(articles)
+                Cache.saveArticleStates(articles)
                 if on_change then on_change() end
             end }},
             {{ text = Icons.CLEAR .. "  " .. _("Delete From Cache"), callback = function()

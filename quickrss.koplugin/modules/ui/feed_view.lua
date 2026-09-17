@@ -366,7 +366,37 @@ function QuickRSSUI:_fetch()
             end
 
             sortByDate(articles)
+            local fetched_count = #articles
+
+            -- Preserve read and saved state from old articles
+            local old_read  = {}
+            local old_saved = {}
+            for _, art in ipairs(self.articles) do
+                if art.link then
+                    if art.read  then old_read[art.link]  = true end
+                    if art.saved then old_saved[art.link] = true end
+                end
+            end
+            for _, art in ipairs(articles) do
+                if old_read[art.link]  then art.read  = true end
+                if old_saved[art.link] then art.saved = true end
+            end
+            -- Filter out dismissed articles (but keep saved ones)
+            local dismissed = Cache.loadDismissed()
+            if next(dismissed) then
+                local kept = {}
+                for _, art in ipairs(articles) do
+                    if art.saved or not (art.link and dismissed[art.link]) then
+                        table.insert(kept, art)
+                    end
+                end
+                articles = kept
+            end
+
             Cache.cleanOrphanedImages(articles)
+            -- Single save of the final list (state carried over, dismissed
+            -- filtered out). Saved even if the UI was closed mid-fetch, so
+            -- the next open picks up these results.
             Cache.saveArticles(articles)
 
             if dns_active then
@@ -376,34 +406,9 @@ function QuickRSSUI:_fetch()
             -- If the UI was closed mid-fetch, don't touch the widget tree.
             if self._closed then return end
 
-            if #articles == 0 then
+            if fetched_count == 0 then
                 self:_showStatus(_("No articles found.\nCheck your feeds."))
             else
-                -- Preserve read and saved state from old articles
-                local old_read  = {}
-                local old_saved = {}
-                for _, art in ipairs(self.articles) do
-                    if art.link then
-                        if art.read  then old_read[art.link]  = true end
-                        if art.saved then old_saved[art.link] = true end
-                    end
-                end
-                for _, art in ipairs(articles) do
-                    if old_read[art.link]  then art.read  = true end
-                    if old_saved[art.link] then art.saved = true end
-                end
-                -- Filter out dismissed articles (but keep saved ones)
-                local dismissed = Cache.loadDismissed()
-                if next(dismissed) then
-                    local kept = {}
-                    for _, art in ipairs(articles) do
-                        if art.saved or not (art.link and dismissed[art.link]) then
-                            table.insert(kept, art)
-                        end
-                    end
-                    articles = kept
-                end
-                Cache.saveArticles(articles)
                 self.articles = articles
                 self:_applyFilter()
 
@@ -840,7 +845,7 @@ function QuickRSSUI:_populateItems()
             callback = function(article)
                 if not article.read then
                     article.read = true
-                    Cache.saveArticles(self.articles)
+                    Cache.saveArticleStates(self.articles)
                     if self.filter_unread then
                         self:_applyFilter(true)
                     else
@@ -860,7 +865,7 @@ function QuickRSSUI:_populateItems()
                         articles      = articles,
                         article_index = i,
                         on_close      = function()
-                            Cache.saveArticles(self.articles)
+                            Cache.saveArticleStates(self.articles)
                             if self.filter_unread then
                                 self:_applyFilter(true)
                             else

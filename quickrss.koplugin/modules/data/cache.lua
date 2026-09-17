@@ -5,8 +5,23 @@
 -- Public API:
 --   Cache.loadArticles(max_age_days)    → articles table (empty if stale or missing)
 --   Cache.saveArticles(articles)        persists articles + last_fetched_at timestamp
+--   Cache.saveArticleStates(articles)   persists only read/saved flags (cheap, no content)
 --   Cache.clearCache()                  wipes articles, timestamp, and all images
 --   Cache.cleanOrphanedImages(articles) deletes cached images not in article list
+--
+-- Cache.saveArticles() re-serializes every article's full HTML content, which
+-- gets expensive as the cache grows (tens of articles with full-text bodies
+-- can add up to a megabyte or more). Read/saved toggles happen far more often
+-- than fetches, so they go through Cache.saveArticleStates() instead, which
+-- writes to its own small file (article_state.lua) containing only a
+-- link → {read, saved} table. Cache.loadArticles() merges that file's
+-- contents back onto the stored articles on read.
+--
+-- This has to be a SEPARATE file, not just a separate key in cache.lua:
+-- LuaSettings:open() loads a whole file into one in-memory table, and
+-- :flush() always re-serializes and rewrites that entire table, no matter
+-- which key was just set. A second LuaSettings key in the same file would
+-- still drag the full article content blob through every flush.
 
 local DataStorage = require("datastorage")
 local Images      = require("modules/data/images")
@@ -15,6 +30,7 @@ local LuaSettings = require("luasettings")
 local logger      = require("logger")
 
 local CACHE_FILE = DataStorage:getDataDir() .. "/quickrss/cache.lua"
+local STATE_FILE = DataStorage:getDataDir() .. "/quickrss/article_state.lua"
 local IMAGE_DIR  = Images.IMAGE_DIR
 
 local _settings
@@ -25,12 +41,34 @@ local function settings()
     return _settings
 end
 
+local _state_settings
+local function stateSettings()
+    if not _state_settings then
+        _state_settings = LuaSettings:open(STATE_FILE)
+    end
+    return _state_settings
+end
+
 local Cache = {}
 
 -- Returns the cached article list, filtering out articles older than
 -- max_age_days on a per-article basis.  Pass 0 or nil to skip age filtering.
 function Cache.loadArticles(max_age_days)
     local all = settings():readSetting("articles") or {}
+
+    -- Overlay read/saved flags from the lightweight state file: toggles
+    -- made since the last full save only land there, not in "articles".
+    local state = stateSettings():readSetting("state")
+    if state and next(state) then
+        for _, art in ipairs(all) do
+            local st = art.link and state[art.link]
+            if st then
+                if st.read  ~= nil then art.read  = st.read  end
+                if st.saved ~= nil then art.saved = st.saved end
+            end
+        end
+    end
+
     if not max_age_days or max_age_days <= 0 then return all end
 
     local cutoff = os.time() - max_age_days * 86400
@@ -55,6 +93,27 @@ function Cache.saveArticles(articles)
     settings()
         :saveSetting("articles", articles)
         :flush()
+    -- The read/saved flags on `articles` are authoritative at this point
+    -- (callers always pass the current in-memory list), so the lightweight
+    -- state file is redundant until the next toggle. Clear it rather than
+    -- let it accumulate stale entries for articles that no longer exist.
+    -- This is a tiny separate file, so flushing it here is cheap.
+    stateSettings():saveSetting("state", nil):flush()
+end
+
+-- Persists only the read/saved flags, keyed by article link, to their own
+-- small file -- never touching cache.lua (and thus never re-serializing the
+-- full article content blob). Safe to call on every single read/save toggle.
+function Cache.saveArticleStates(articles)
+    local state = {}
+    for _, art in ipairs(articles) do
+        if art.link and art.link ~= "" then
+            state[art.link] = { read = art.read or nil, saved = art.saved or nil }
+        end
+    end
+    stateSettings()
+        :saveSetting("state", state)
+        :flush()
 end
 
 -- Wipes the article cache and all cached images, preserving saved articles.
@@ -72,8 +131,10 @@ function Cache.clearCache()
         :saveSetting("articles", #saved > 0 and saved or nil)
         :saveSetting("dismissed", nil)
         :flush()
-    -- Reset the in-memory handle so next load re-reads from disk cleanly
+    stateSettings():saveSetting("state", nil):flush()
+    -- Reset the in-memory handles so the next load re-reads from disk cleanly
     _settings = nil
+    _state_settings = nil
 
     -- Build set of image files still needed by saved articles
     local keep = {}
