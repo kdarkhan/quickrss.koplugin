@@ -275,10 +275,19 @@ function QuickRSSUI:_fetch()
     -- Build a lookup of previously cached articles so the parser can skip
     -- FiveFilters for articles it already enriched, and we can skip
     -- thumbnail/inline-image downloads for articles already processed.
+    -- The cached list is "light" (no content/full_text in memory), so pull
+    -- each old article's body back in here -- this only runs once per
+    -- explicit fetch, not on every UI interaction, so the extra small reads
+    -- are negligible next to the network calls a fetch already makes.
     local old_articles = Cache.loadArticles(999999)  -- ignore age
     local cached_by_link = {}
     for _, art in ipairs(old_articles) do
         if art.link and art.link ~= "" then
+            local body = Cache.loadArticleBody(art.link)
+            if body then
+                art.content   = body.content
+                art.full_text = body.full_text
+            end
             cached_by_link[art.link] = art
         end
     end
@@ -859,6 +868,21 @@ function QuickRSSUI:_populateItems()
                 }
                 UIManager:show(msg)
                 UIManager:nextTick(function()
+                    -- Pull this one article's body in from its own file.
+                    -- ArticleReader:onClose()/_navigateTo() strip it back off
+                    -- when the reader moves on, so `self.articles` here never
+                    -- holds more than the currently-open article's content.
+                    -- Only overwrite when a body file was actually found: a
+                    -- cache written before this per-article split existed may
+                    -- still have `content` embedded directly on `article`
+                    -- (nothing has re-saved it yet), and that shouldn't be
+                    -- wiped out just because its own file doesn't exist yet.
+                    local body = Cache.loadArticleBody(article.link)
+                    if body then
+                        article.content   = body.content
+                        article.full_text = body.full_text
+                    end
+
                     local ArticleReader = require("modules/ui/article_reader")
                     UIManager:show(ArticleReader:new{
                         article       = article,

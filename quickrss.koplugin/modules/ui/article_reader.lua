@@ -12,6 +12,7 @@
 
 local Blitbuffer       = require("ffi/blitbuffer")
 local Button           = require("ui/widget/button")
+local Cache            = require("modules/data/cache")
 local Config           = require("modules/data/config")
 local Device           = require("device")
 local Event            = require("ui/event")
@@ -545,8 +546,21 @@ function ArticleReader:onClose()
     UIManager:close(self)
     -- Full e-ink flash so the feed list underneath redraws without ghosting.
     UIManager:setDirty(nil, "full")
-    if not self._navigating and self.on_close then
-        self.on_close()
+    if not self._navigating then
+        -- Free this article's body now that the reader is actually closing
+        -- (as opposed to navigating to another article, which frees it in
+        -- _navigateTo() instead). Keeps the in-memory article list light
+        -- again once nothing is being read. Only do this when the content
+        -- can actually be reloaded from its own file -- a cache written
+        -- before the per-article body split existed may still have
+        -- `content` only in memory, with nothing on disk to reload it from.
+        if Cache.loadArticleBody(self.article.link) then
+            self.article.content   = nil
+            self.article.full_text = nil
+        end
+        if self.on_close then
+            self.on_close()
+        end
     end
 end
 
@@ -582,6 +596,21 @@ function ArticleReader:_navigateTo(new_idx)
     local target = self.articles[new_idx]
     target.read = true  -- mark on shared object; saved when user exits reader
     self._navigating = true  -- suppress on_close callback
+
+    -- Free the outgoing article's body -- but only if it can actually be
+    -- reloaded from disk (see the same guard in onClose()) -- and load the
+    -- target's in its place, so at most one article's content is normally
+    -- held in memory.
+    if Cache.loadArticleBody(self.article.link) then
+        self.article.content   = nil
+        self.article.full_text = nil
+    end
+    local body = Cache.loadArticleBody(target.link)
+    if body then
+        target.content   = body.content
+        target.full_text = body.full_text
+    end
+
     UIManager:close(self)
     UIManager:show(ArticleReader:new{
         article       = target,
