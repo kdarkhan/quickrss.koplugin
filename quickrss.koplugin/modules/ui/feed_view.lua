@@ -462,9 +462,14 @@ function QuickRSSUI:_showStatus(message)
     self.article_list:clear()
     self.article_list:resetLayout()
 
-    -- No cards on screen while a status message is showing -- clear the
-    -- d-pad focus layout so a stale cursor can't point at a removed card.
-    self.layout   = {}
+    -- No cards on screen while a status message is showing, but the title
+    -- bar's menu (e.g. "Fetch Articles" from an empty cache) should still
+    -- be reachable, so it's the only row in the focus layout here.
+    self.layout = {}
+    local title_row = self.title_bar:generateHorizontalLayout()[1]
+    if title_row then
+        table.insert(self.layout, title_row)
+    end
     self.selected = { x = 1, y = 1 }
 
     -- Use the full list area height so the placeholder is centred in the
@@ -489,6 +494,7 @@ function QuickRSSUI:_showStatus(message)
     self.next_button:enableDisable(false)
 
     self.outer_group:resetLayout()
+    self:refocusWidget()
 
     UIManager:setDirty(self, function()
         return "ui", self.dimen
@@ -854,9 +860,16 @@ function QuickRSSUI:_populateItems()
     local extra_px    = (page_count > 1) and (remaining - gap * gap_count) or remaining
     self.list_spacer.width = extra_px
 
-    -- FocusManager layout: one row per visible card, single column. Rebuilt
-    -- fresh on every page/filter change alongside the widgets themselves.
+    -- FocusManager layout. Row 1 is the title bar's icon buttons (TitleBar
+    -- already builds this row for us); then one row per visible card,
+    -- single column; a footer row (filter/prev/next buttons) is appended
+    -- after the loop below. Rebuilt fresh on every page/filter change
+    -- alongside the widgets themselves.
     self.layout = {}
+    local title_row = self.title_bar:generateHorizontalLayout()[1]
+    if title_row then
+        table.insert(self.layout, title_row)
+    end
 
     local art_settings = require("modules/data/config").getArticleSettings()
     for i = start_idx, end_idx do
@@ -954,13 +967,13 @@ function QuickRSSUI:_populateItems()
 
     self.outer_group:resetLayout()
 
-    -- Reset the d-pad focus cursor to the first card on the new page/filter
-    -- and re-apply its highlight (self.layout was just rebuilt, so any
-    -- previous focus position may no longer point at a valid item).
-    self.selected = { x = 1, y = 1 }
-    if #self.layout > 0 then
-        self:refocusWidget()
-    end
+    -- Reset the d-pad focus cursor and re-apply its highlight (self.layout
+    -- was just rebuilt, so any previous focus position may no longer point
+    -- at a valid item). Land on the first card (row 2, since row 1 is the
+    -- title bar) when there is one; otherwise fall back to the title bar
+    -- itself (e.g. an empty filtered list still needs the menu reachable).
+    self.selected = { x = 1, y = (page_count > 0) and 2 or 1 }
+    self:refocusWidget()
 
     -- Full e-ink flash every 3 page turns to clear ghosting; fast partial
     -- update ("ui") on the others for snappy navigation.
