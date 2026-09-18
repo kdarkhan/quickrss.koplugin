@@ -143,6 +143,11 @@ local ArticleReader = InputContainer:extend{
 }
 
 function ArticleReader:init()
+    -- Tracks the currently open reader (if any) so other entry points (the
+    -- main menu, hardware key shortcuts, ...) can bring it back to the
+    -- front instead of stacking a redundant duplicate on top of it.
+    ArticleReader.instance = self
+
     local screen_w = Screen:getWidth()
     local screen_h = Screen:getHeight()
 
@@ -572,6 +577,16 @@ function ArticleReader:onClose()
         if self.on_close then
             self.on_close()
         end
+    end
+end
+
+-- Fires regardless of *how* the widget leaves the window stack (proper
+-- Close, a plain UIManager:close(), navigating to another article, ...),
+-- so this is the reliable place to clear the instance pointer -- unlike a
+-- close_callback, which only runs along one specific closing path.
+function ArticleReader:onCloseWidget()
+    if ArticleReader.instance == self then
+        ArticleReader.instance = nil
     end
 end
 

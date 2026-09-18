@@ -31,6 +31,30 @@ local VerticalGroup   = require("ui/widget/verticalgroup")
 local VerticalSpan    = require("ui/widget/verticalspan")
 local _               = require("gettext")
 
+-- Closes a widget the same "proper" way its own Back/close button would,
+-- rather than yanking it off the window stack directly -- used by
+-- QuickRSSUI.show() to clear away whatever's covering an already-open feed
+-- list/article reader so it can be surfaced instead of duplicated.
+local function closeWidget(widget)
+    if widget.onCloseAllMenus then
+        widget:onCloseAllMenus()
+    elseif widget.onClose then
+        widget:onClose()
+    else
+        UIManager:close(widget)
+    end
+end
+
+local function isInWindowStack(widget)
+    local stack = UIManager._window_stack
+    for i = 1, #stack do
+        if stack[i].widget == widget then
+            return true
+        end
+    end
+    return false
+end
+
 -- ── Date-based sort helper ──────────────────────────────────────────────────
 -- Month abbreviation → number lookup for RSS pubDate parsing.
 local MONTHS = {
@@ -118,6 +142,11 @@ local QuickRSSUI = FocusManager:extend{
 }
 
 function QuickRSSUI:init()
+    -- Tracks the currently open feed list (if any) so other entry points
+    -- (the main menu, hardware key shortcuts, ...) can bring it back to
+    -- the front instead of stacking a redundant duplicate on top of it.
+    QuickRSSUI.instance = self
+
     local screen_w = Screen:getWidth()
     local screen_h = Screen:getHeight()
 
@@ -1038,6 +1067,42 @@ end
 function QuickRSSUI:onClose()
     self._closed = true
     UIManager:close(self)
+end
+
+-- Fires regardless of *how* the widget leaves the window stack (proper
+-- Close, a plain UIManager:close(), ...), so this is the reliable place to
+-- clear the instance pointer -- unlike a close_callback, which only runs
+-- along one specific closing path.
+function QuickRSSUI:onCloseWidget()
+    if QuickRSSUI.instance == self then
+        QuickRSSUI.instance = nil
+    end
+end
+
+-- Opens the feed list -- or, if a feed list or article reader is already
+-- open but buried under something else (a dialog, the main menu, ...),
+-- surfaces it instead of stacking a redundant duplicate on top of it. This
+-- is the entry point every caller (main menu item, hardware key shortcuts,
+-- ...) should use instead of `UIManager:show(QuickRSSUI:new{})` directly.
+function QuickRSSUI.show()
+    local ArticleReader = require("modules/ui/article_reader")
+    local existing = QuickRSSUI.instance or ArticleReader.instance
+    if existing and isInWindowStack(existing) then
+        local stack = UIManager._window_stack
+        local guard = 0
+        while stack[#stack] and stack[#stack].widget ~= existing and guard < 50 do
+            local top = stack[#stack].widget
+            closeWidget(top)
+            if stack[#stack] and stack[#stack].widget == top then
+                -- Didn't budge: force it off as a last resort so we can't
+                -- get stuck here.
+                UIManager:close(top)
+            end
+            guard = guard + 1
+        end
+        return
+    end
+    UIManager:show(QuickRSSUI:new{})
 end
 
 return QuickRSSUI

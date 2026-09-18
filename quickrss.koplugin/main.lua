@@ -1,5 +1,4 @@
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
-local UIManager = require("ui/uimanager")
 local Icons = require("modules/ui/icons")
 local _ = require("gettext")
 
@@ -17,8 +16,9 @@ function QuickRSS:addToMainMenu(menu_items)
         text = Icons.FEEDS .. " " .. _("QuickRSS"),
         sorting_hint = "search",
         callback = function()
-            local QuickRSSUI = require("modules/ui/feed_view")
-            UIManager:show(QuickRSSUI:new{})
+            -- .show() surfaces an already-open feed list/article reader
+            -- instead of stacking a redundant duplicate on top of it.
+            require("modules/ui/feed_view").show()
         end,
     }
 end
