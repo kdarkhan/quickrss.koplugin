@@ -90,6 +90,12 @@ local ArticleItem       = ArticleItemModule.ArticleItem
 local ITEM_HEIGHT       = ArticleItemModule.ITEM_HEIGHT
 local PAD               = ArticleItemModule.PAD
 
+-- Cap for Images.downloadImage()'s one-time thumbnail shrink: comfortably
+-- bigger than the card thumbnail's actual on-screen size (2x, for a bit of
+-- headroom in the cover-crop scaling article_item.lua does), computed from
+-- the same THUMB_W/THUMB_H so it scales correctly on any device DPI.
+local THUMB_MAX_DIM = 2 * math.max(ArticleItemModule.THUMB_W, ArticleItemModule.THUMB_H)
+
 local Screen = Device.screen
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -341,7 +347,7 @@ function QuickRSSUI:_fetch()
                             self:_showStatus(T(thumb_msg, j, #thumb_todo))
                             UIManager:forceRePaint()
                         end
-                        local fname = AR.downloadImage(art.image_url)
+                        local fname = AR.downloadImage(art.image_url, THUMB_MAX_DIM)
                         if fname then
                             art.image_path = AR.IMAGE_DIR .. "/" .. fname
                         end

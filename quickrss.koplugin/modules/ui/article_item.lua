@@ -250,4 +250,6 @@ return {
     ArticleItem = ArticleItem,
     ITEM_HEIGHT = ITEM_HEIGHT,
     PAD         = PAD,
+    THUMB_W     = THUMB_W,
+    THUMB_H     = THUMB_H,
 }

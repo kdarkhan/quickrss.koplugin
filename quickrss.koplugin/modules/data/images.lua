@@ -5,13 +5,26 @@
 --
 -- Public API:
 --   Images.IMAGE_DIR                    path to the image cache directory
---   Images.downloadImage(url)           → local filename (relative to IMAGE_DIR) or nil
+--   Images.downloadImage(url, max_dim)  → local filename (relative to IMAGE_DIR) or nil
 --   Images.localizeImages(html)         → html with remote src rewritten to local filenames
 --   Images.constrainImages(html)        → html with width/height/style stripped from <img>
+--
+-- downloadImage()'s optional max_dim shrinks the image to disk ONCE, right
+-- after downloading, if either dimension exceeds it. This is for card
+-- thumbnails: article_item.lua rebuilds and re-decodes every card's
+-- thumbnail from this file on every single page render (deliberately
+-- without an in-memory decode cache -- see the comment there for why that's
+-- dangerous), so shrinking a typical multi-hundred-KB source photo down to
+-- roughly thumbnail size once, at download time, makes every one of those
+-- later re-decodes cheap without touching KOReader's own image cache at
+-- all. Callers downloading full-size inline article images (localizeImages
+-- below) must NOT pass max_dim -- those are meant to be read at full
+-- article width.
 
 local DataStorage = require("datastorage")
 local lfs         = require("libs/libkoreader-lfs")
 local logger      = require("logger")
+local RenderImage = require("ui/renderimage")
 
 local IMAGE_DIR = DataStorage:getDataDir() .. "/quickrss/images"
 lfs.mkdir(IMAGE_DIR)  -- no-op if already exists
@@ -110,11 +123,49 @@ local function downloadImageLuaSec(url, fpath)
     return true
 end
 
+-- Shrinks the image file at `path` in place if either dimension exceeds
+-- max_dim, preserving aspect ratio. No-op (including on any decode/encode
+-- failure) if the image is already small enough or anything goes wrong --
+-- the original downloaded file is only ever replaced by a successfully
+-- written smaller one, via a temp file, never left partially overwritten.
+local function shrinkImageFile(path, max_dim)
+    local ok, err = pcall(function()
+        local bb = RenderImage:renderImageFile(path, false)
+        if not bb then return end
+
+        local w, h = bb:getWidth(), bb:getHeight()
+        if w <= max_dim and h <= max_dim then
+            bb:free()
+            return
+        end
+
+        local scale = max_dim / math.max(w, h)
+        local small_bb = RenderImage:scaleBlitBuffer(
+            bb, math.floor(w * scale), math.floor(h * scale), true) -- frees bb
+
+        local ext      = path:match("%.([^./]+)$") or "jpg"
+        local format   = (ext == "png") and "png" or (ext == "bmp") and "bmp" or "jpg"
+        local tmp_path = path .. ".tmp"
+        local write_ok = small_bb:writeToFile(tmp_path, format, 85)
+        small_bb:free()
+
+        if write_ok then
+            os.rename(tmp_path, path)
+        else
+            os.remove(tmp_path)
+        end
+    end)
+    if not ok then
+        logger.warn("QuickRSS: thumbnail shrink failed:", path, err)
+    end
+end
+
 -- ── Public download function ─────────────────────────────────────────────────
 -- Download one image URL into IMAGE_DIR.  Returns the local filename (relative
 -- to IMAGE_DIR) on success, or nil on failure.  Already-cached files are
 -- returned immediately without a network request.
-local function downloadImage(url)
+-- max_dim: see the module comment above -- only pass this for thumbnails.
+local function downloadImage(url, max_dim)
     url = decodeUrl(url)
 
     local fname = urlHash(url) .. "." .. guessExt(url)
@@ -127,6 +178,9 @@ local function downloadImage(url)
     local ok = downloadImageLuaSec(url, fpath)
     if ok then
         logger.dbg("QuickRSS: cached image", fname, "from:", url)
+        if max_dim then
+            shrinkImageFile(fpath, max_dim)
+        end
         return fname
     else
         logger.warn("QuickRSS: image download failed:", url)
