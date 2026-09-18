@@ -39,7 +39,14 @@ local function makeRow(inner_w, label, val_widget, on_tap)
         -- Lets this row take the FocusManager highlight on non-touch
         -- devices (d-pad Up/Down moves a cursor across rows, Press
         -- activates on_tap). No-op on touch devices.
-        focusable  = true,
+        --
+        -- focus_inner_border avoids a content jump: onFocus()'s default
+        -- behavior grows self.bordersize (from 0), which paintTo() adds
+        -- directly to the content's paint position, shifting the row's
+        -- label/value down-and-right while focused. An inner border is
+        -- painted over the content instead, so nothing moves.
+        focusable          = true,
+        focus_inner_border = true,
         HorizontalGroup:new{
             align = "center",
             TextBoxWidget:new{

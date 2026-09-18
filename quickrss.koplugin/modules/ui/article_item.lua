@@ -227,7 +227,17 @@ function ArticleItem:init()
         -- devices (d-pad Up/Down moves a cursor across cards; the border
         -- is drawn/cleared automatically by FrameContainer's own
         -- onFocus/onUnfocus). No-op on touch devices.
-        focusable  = true,
+        --
+        -- focus_inner_border is required: onFocus()'s default behavior
+        -- grows self.bordersize (from 0) to draw the highlight, and
+        -- paintTo() positions the card's content at
+        -- x + margin + bordersize + padding -- so without this, focusing a
+        -- card shifts its title/snippet down-and-right by the border width
+        -- for as long as it's focused. focus_inner_border draws the
+        -- highlight as an inner border painted over the content instead,
+        -- which doesn't move anything.
+        focusable        = true,
+        focus_inner_border = true,
         row_content,
     }
 end
