@@ -101,8 +101,17 @@ function ArticleItem:init()
     local thumb
     if has_thumb then
         -- Look up the precomputed cover_scale; only probe if this is the
-        -- first time we've seen this image this session.
-        local cover_scale = _cover_scale_cache[self.article.image_path]
+        -- first time we've seen this image this session. Keyed by path AND
+        -- mtime, not just path: image_path is a stable hash of the source
+        -- URL, but the file living there can change (e.g. deleted and
+        -- re-downloaded after a cache clear) without the path changing --
+        -- and a cover_scale probed against a since-replaced file is wrong
+        -- for whatever's there now, typically showing a too-small thumbnail
+        -- centered in its box. Including mtime forces a fresh probe
+        -- whenever the file's actual content changed.
+        local mtime = lfs.attributes(self.article.image_path, "modification")
+        local cache_key = self.article.image_path .. "|" .. tostring(mtime)
+        local cover_scale = _cover_scale_cache[cache_key]
         if not cover_scale then
             local ok, result = pcall(function()
                 local probe = ImageWidget:new{
@@ -124,7 +133,7 @@ function ArticleItem:init()
             end)
             if ok and result then
                 cover_scale = result
-                _cover_scale_cache[self.article.image_path] = cover_scale
+                _cover_scale_cache[cache_key] = cover_scale
             else
                 has_thumb = false
             end
